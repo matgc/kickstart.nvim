@@ -98,8 +98,14 @@ vim.o.breakindent = true -- keep wrapped lines visually indented
 -- Enable true colors
 vim.opt.termguicolors = true
 
+-- mouse --
+vim.opt.mouse = 'a'
+vim.opt.mousescroll = 'ver:1,hor:1' -- default is larger, feels jumpy
+vim.opt.scrolloff = 3
+vim.opt.scrolljump = 1
+
 -- Set to true if you have a Nerd Font installed and selected in the terminal
-vim.g.have_nerd_font = false
+vim.g.have_nerd_font = true
 
 -- [[ Setting options ]]
 -- See `:help vim.o`
@@ -110,7 +116,7 @@ vim.g.have_nerd_font = false
 vim.o.number = true
 -- You can also add relative line numbers, to help with jumping.
 --  Experiment for yourself to see if you like it!
--- vim.o.relativenumber = true
+vim.o.relativenumber = true
 
 -- Enable mouse mode, can be useful for resizing splits for example!
 vim.o.mouse = 'a'
@@ -218,19 +224,35 @@ vim.keymap.set('n', '<up>', '<cmd>echo "Use k to move!!"<CR>')
 vim.keymap.set('n', '<down>', '<cmd>echo "Use j to move!!"<CR>')
 
 -- Keybinds to make split navigation easier.
---  Use CTRL+<hjkl> to switch between windows
+--  Use CTRL+ALT+<hjkl> to switch between windows
 --
 --  See `:help wincmd` for a list of all window commands
-vim.keymap.set('n', '<C-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
-vim.keymap.set('n', '<C-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
-vim.keymap.set('n', '<C-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
-vim.keymap.set('n', '<C-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
+vim.keymap.set('n', '<C-M-h>', '<C-w><C-h>', { desc = 'Move focus to the left window' })
+vim.keymap.set('n', '<C-M-l>', '<C-w><C-l>', { desc = 'Move focus to the right window' })
+vim.keymap.set('n', '<C-M-j>', '<C-w><C-j>', { desc = 'Move focus to the lower window' })
+vim.keymap.set('n', '<C-M-k>', '<C-w><C-k>', { desc = 'Move focus to the upper window' })
 
 -- NOTE: Some terminals have colliding keymaps or are not able to send distinct keycodes
 -- vim.keymap.set("n", "<C-S-h>", "<C-w>H", { desc = "Move window to the left" })
 -- vim.keymap.set("n", "<C-S-l>", "<C-w>L", { desc = "Move window to the right" })
 -- vim.keymap.set("n", "<C-S-j>", "<C-w>J", { desc = "Move window to the lower" })
 -- vim.keymap.set("n", "<C-S-k>", "<C-w>K", { desc = "Move window to the upper" })
+
+-- [[ Auto-Reload External File Changes ]]
+-- Reload buffers when files are modified outside Neovim (for example by LLM tools).
+vim.o.autoread = true
+
+vim.api.nvim_create_autocmd({ 'FocusGained', 'BufEnter', 'CursorHold', 'CursorHoldI' }, {
+  desc = 'Check if file changed on disk and reload if safe',
+  group = vim.api.nvim_create_augroup('kickstart-auto-reload', { clear = true }),
+  command = 'if mode() !=# "c" | checktime | endif',
+})
+
+vim.api.nvim_create_autocmd('FileChangedShellPost', {
+  desc = 'Notify when file is reloaded from disk',
+  group = vim.api.nvim_create_augroup('kickstart-file-changed-shell-post', { clear = true }),
+  callback = function() vim.notify 'File reloaded from disk' end,
+})
 
 -- [[ Basic Autocommands ]]
 --  See `:help lua-guide-autocommands`
@@ -488,8 +510,11 @@ require('lazy').setup({
         { desc = '[S]earch [/] in Open Files' }
       )
 
+      -- Shortcut for searching your notes
+      vim.keymap.set('n', '<leader>sn', function() builtin.find_files { cwd = vim.fn.expand '~/documents/sb' } end, { desc = '[S]earch [N]otes' })
+
       -- Shortcut for searching your Neovim configuration files
-      vim.keymap.set('n', '<leader>sn', function() builtin.find_files { cwd = vim.fn.stdpath 'config' } end, { desc = '[S]earch [N]eovim files' })
+      vim.keymap.set('n', '<leader>sv', function() builtin.find_files { cwd = vim.fn.stdpath 'config' } end, { desc = '[S]earch Neo[V]im files' })
     end,
   },
 
@@ -619,14 +644,16 @@ require('lazy').setup({
       local servers = {
         -- clangd = {},
         -- gopls = {},
-        -- pyright = {},
+        pyright = {},
         -- rust_analyzer = {},
         --
         -- Some languages (like typescript) have entire language plugins that can be useful:
         --    https://github.com/pmizio/typescript-tools.nvim
         --
         -- But for many setups, the LSP (`ts_ls`) will work just fine
-        -- ts_ls = {},
+        ts_ls = {
+          filetypes = { 'javascript', 'javascriptreact', 'typescript', 'typescriptreact' },
+        },
 
         stylua = {}, -- Used to format Lua code
 
@@ -825,7 +852,84 @@ require('lazy').setup({
     -- If you want to see what colorschemes are already installed, you can use `:Telescope colorscheme`.
     'Mofiqul/dracula.nvim',
     priority = 1000, -- Make sure to load this before all the other start plugins.
-    config = function() vim.cmd.colorscheme 'dracula' end,
+    config = function()
+      require('dracula').setup { transparent_bg = true }
+      vim.cmd.colorscheme 'dracula'
+
+      local clear_bg = function()
+        for _, group in ipairs { 'Normal', 'NormalNC', 'SignColumn', 'EndOfBuffer', 'LineNr', 'FoldColumn' } do
+          vim.api.nvim_set_hl(0, group, { bg = 'none' })
+        end
+      end
+
+      local render_markdown_dracula = function()
+        local colors = require('dracula').colors()
+        local set = vim.api.nvim_set_hl
+
+        set(0, 'RenderMarkdownH1', { fg = colors.pink, bold = true })
+        set(0, 'RenderMarkdownH2', { fg = colors.purple, bold = true })
+        set(0, 'RenderMarkdownH3', { fg = colors.cyan, bold = true })
+        set(0, 'RenderMarkdownH4', { fg = colors.green, bold = true })
+        set(0, 'RenderMarkdownH5', { fg = colors.yellow, bold = true })
+        set(0, 'RenderMarkdownH6', { fg = colors.orange, bold = true })
+
+        set(0, 'RenderMarkdownH1Bg', { bg = colors.menu })
+        set(0, 'RenderMarkdownH2Bg', { bg = colors.menu })
+        set(0, 'RenderMarkdownH3Bg', { bg = colors.selection })
+        set(0, 'RenderMarkdownH4Bg', { bg = colors.selection })
+        set(0, 'RenderMarkdownH5Bg', { bg = colors.visual })
+        set(0, 'RenderMarkdownH6Bg', { bg = colors.visual })
+
+        set(0, 'RenderMarkdownCode', { bg = colors.menu })
+        set(0, 'RenderMarkdownCodeInline', { fg = colors.cyan, bg = colors.selection })
+        set(0, 'RenderMarkdownCodeBorder', { fg = colors.comment, bg = colors.menu })
+        set(0, 'RenderMarkdownCodeInfo', { fg = colors.cyan, bg = colors.menu })
+        set(0, 'RenderMarkdownCodeFallback', { fg = colors.fg, bg = colors.menu })
+        set(0, 'RenderMarkdownInlineHighlight', { fg = colors.cyan, bg = colors.selection })
+
+        set(0, 'RenderMarkdownQuote', { fg = colors.comment, italic = true })
+        set(0, 'RenderMarkdownQuote1', { fg = colors.purple })
+        set(0, 'RenderMarkdownQuote2', { fg = colors.cyan })
+        set(0, 'RenderMarkdownQuote3', { fg = colors.green })
+        set(0, 'RenderMarkdownQuote4', { fg = colors.yellow })
+        set(0, 'RenderMarkdownQuote5', { fg = colors.orange })
+        set(0, 'RenderMarkdownQuote6', { fg = colors.pink })
+
+        set(0, 'RenderMarkdownBullet', { fg = colors.purple })
+        set(0, 'RenderMarkdownDash', { fg = colors.comment })
+        set(0, 'RenderMarkdownMath', { fg = colors.pink })
+        set(0, 'RenderMarkdownIndent', { fg = colors.nontext })
+        set(0, 'RenderMarkdownSign', { fg = colors.comment, bg = 'none' })
+        set(0, 'RenderMarkdownHtmlComment', { fg = colors.comment, italic = true })
+
+        set(0, 'RenderMarkdownLink', { fg = colors.cyan, underline = true })
+        set(0, 'RenderMarkdownLinkTitle', { fg = colors.green, italic = true })
+        set(0, 'RenderMarkdownWikiLink', { fg = colors.purple, underline = true })
+
+        set(0, 'RenderMarkdownUnchecked', { fg = colors.comment })
+        set(0, 'RenderMarkdownChecked', { fg = colors.green })
+        set(0, 'RenderMarkdownTodo', { fg = colors.yellow })
+
+        set(0, 'RenderMarkdownTableHead', { fg = colors.purple, bg = colors.menu, bold = true })
+        set(0, 'RenderMarkdownTableRow', { fg = colors.fg })
+
+        set(0, 'RenderMarkdownSuccess', { fg = colors.green })
+        set(0, 'RenderMarkdownInfo', { fg = colors.cyan })
+        set(0, 'RenderMarkdownHint', { fg = colors.purple })
+        set(0, 'RenderMarkdownWarn', { fg = colors.orange })
+        set(0, 'RenderMarkdownError', { fg = colors.red })
+      end
+
+      clear_bg()
+      render_markdown_dracula()
+      vim.api.nvim_create_autocmd('ColorScheme', {
+        group = vim.api.nvim_create_augroup('kickstart-transparent-bg', { clear = true }),
+        callback = function()
+          clear_bg()
+          render_markdown_dracula()
+        end,
+      })
+    end,
   },
 
   -- Highlight todo, notes, etc in comments
@@ -837,6 +941,15 @@ require('lazy').setup({
     ---@type TodoOptions
     ---@diagnostic disable-next-line: missing-fields
     opts = { signs = false },
+  },
+
+  {
+    'MeanderingProgrammer/render-markdown.nvim',
+    ft = { 'markdown' },
+    dependencies = { 'nvim-treesitter/nvim-treesitter', 'nvim-mini/mini.nvim' },
+    ---@module 'render-markdown'
+    ---@type render.md.UserConfig
+    opts = {},
   },
 
   { -- Collection of various small independent plugins/modules
@@ -921,7 +1034,7 @@ require('lazy').setup({
   -- require 'kickstart.plugins.indent_line',
   -- require 'kickstart.plugins.lint',
   -- require 'kickstart.plugins.autopairs',
-  -- require 'kickstart.plugins.neo-tree',
+  require 'kickstart.plugins.neo-tree',
   -- require 'kickstart.plugins.gitsigns', -- adds gitsigns recommend keymaps
 
   -- NOTE: The import below can automatically add your own plugins, configuration, etc from `lua/custom/plugins/*.lua`
