@@ -90,6 +90,30 @@ P.S. You can delete this when you're done too. It's your config now! :)
 vim.g.mapleader = ' '
 vim.g.maplocalleader = ' '
 
+-- Ensure external tools installed via Homebrew are discoverable in Neovim.
+for _, path in ipairs {
+  '/opt/homebrew/opt/openjdk/bin',
+  '/opt/homebrew/opt/ruby/bin',
+  '/opt/homebrew/lib/ruby/gems/4.0.0/bin',
+} do
+  if vim.fn.isdirectory(path) == 1 and not vim.env.PATH:find(path, 1, true) then
+    vim.env.PATH = path .. ':' .. vim.env.PATH
+  end
+end
+
+-- Ensure local site directory is on runtimepath (e.g. Treesitter parsers).
+local data_site = vim.fn.stdpath 'data' .. '/site'
+local data_site_with_sep = data_site .. '/'
+if not vim.list_contains(vim.api.nvim_list_runtime_paths(), data_site) then
+  vim.opt.runtimepath:append(data_site)
+end
+-- nvim-treesitter health compares against the trailing-slash path literally.
+vim.schedule(function()
+  if not vim.list_contains(vim.api.nvim_list_runtime_paths(), data_site_with_sep) then
+    vim.o.rtp = data_site_with_sep .. ',' .. vim.o.rtp
+  end
+end)
+
 -- Enable wrap text
 vim.o.wrap = true -- wrap long lines at window width
 vim.o.linebreak = true -- wrap at word boundaries (nicer)
